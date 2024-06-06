@@ -1,0 +1,134 @@
+SELECT * FROM `big-query-421913.COVID.covid_vaccines` 
+ORDER BY 3,4;
+
+SELECT * FROM `big-query-421913.COVID.covid_deaths` 
+ORDER BY 3,4
+
+-- Select Data that we are going to be using 
+
+Select Location, date, total_cases, new_cases, total_deaths, population
+FROM `big-query-421913.COVID.covid_deaths` 
+ORDER BY 1, 2
+
+-- Looking at Total Cases vs Total Deaths 
+-- Shows the likelihood of dying if you contract Covid in your country 
+
+Select Location, date, total_cases, total_deaths, (total_deaths/total_cases)*100 AS DeathPercentage
+FROM `big-query-421913.COVID.covid_deaths` 
+WHERE Location Like '%States%'
+ORDER BY 1, 2
+
+-- Looking at Total Cases vs Population
+-- Shows what percentage of population got Covid 
+
+Select Location, date, population, total_cases, (total_cases/population)*100 AS CasesPercentage
+FROM `big-query-421913.COVID.covid_deaths` 
+WHERE Location Like '%States%'
+ORDER BY 1, 2
+
+-- Looking at Countries with Highest Infection Rate comapared to Population 
+
+Select Location, population, MAX(total_cases) AS Highest_Infection_Count, MAX((total_cases/population))*100 AS Percent_of_Pop_Infected
+FROM `big-query-421913.COVID.covid_deaths` 
+WHERE Location Like '%States%'
+GROUP BY Location, Population
+ORDER BY Percent_of_Pop_Infected DESC
+
+-- Showing Countries with Highest Death Count per Population
+
+Select Location, MAX(Total_deaths) AS Total_Death_Count
+FROM `big-query-421913.COVID.covid_deaths` 
+-- WHERE Location Like '%States%'
+WHERE continent is not null 
+GROUP BY Location
+ORDER BY Total_Death_Count DESC
+
+-- Let's break things down by continent
+-- Showing continents with highest death count per population
+
+Select continent, MAX(Total_deaths) AS Total_Death_Count
+FROM `big-query-421913.COVID.covid_deaths` 
+-- WHERE Location Like '%States%'
+WHERE continent is not null 
+GROUP BY continent
+ORDER BY Total_Death_Count DESC
+
+-- GLOBAL NUMBERS 
+
+Select SUM(new_cases) AS new_case_total, SUM(new_deaths) AS new_death_total, SUM(new_deaths)/SUM(new_cases)*100 AS DeathPercentage
+FROM `big-query-421913.COVID.covid_deaths` 
+-- WHERE Location Like '%States%' 
+WHERE continent is not null
+-- GROUP BY date 
+ORDER BY 1, 2
+
+
+-- JOINS
+
+-- Looking at Total Population vs Vaccinations 
+
+
+SELECT dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations, 
+SUM(vac.new_vaccinations) OVER (Partition by dea.location ORDER BY dea.location, dea.Date) as Rolling_People_Vaccinated
+FROM big-query-421913.COVID.covid_deaths dea 
+JOIN big-query-421913.COVID.covid_vaccines vac
+ ON dea.location = vac.location 
+  and dea.date = vac.date
+WHERE dea.continent is not null
+ORDER BY 1,2,3
+
+-- NOW USE CTE 
+
+With PopvsVac (Continent, Location, Date, Population, new_vaccinations, Rolling_People_Vaccinated) AS
+(
+SELECT dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations, 
+SUM(vac.new_vaccinations) OVER (Partition by dea.location ORDER BY dea.location, dea.Date) as Rolling_People_Vaccinated
+FROM big-query-421913.COVID.covid_deaths dea 
+JOIN big-query-421913.COVID.covid_vaccines vac
+  ON dea.location = vac.location 
+  and dea.date = vac.date
+WHERE dea.continent is not null
+ORDER BY 1,2,3
+)
+SELECT *, (Rolling_People_Vaccinated/Population)*100
+FROM PopvsVac
+
+
+--TEMP TABLE 
+
+DROP table if exists #PercentPopulationVaccinated
+Create Table #PercentPopulationVaccinated
+(
+Continent nvarchar(255), 
+Location nvarchar(255),
+Date datetime, 
+Population numeric, 
+New_vaccinations numeric, 
+Rolling_People_Vaccinated numeric
+) 
+
+
+INSERT INTO #PercentPopulationVaccinated
+SELECT dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations, 
+SUM(vac.new_vaccinations) OVER (Partition by dea.location ORDER BY dea.location, dea.Date) as Rolling_People_Vaccinated
+FROM big-query-421913.COVID.covid_deaths dea 
+JOIN big-query-421913.COVID.covid_vaccines vac
+  ON dea.location = vac.location 
+  and dea.date = vac.date
+WHERE dea.continent is not null
+ORDER BY 1,2,3
+
+SELECT *, (Rolling_People_Vaccinated/Population)*100
+FROM #PercentPopulationVaccinated
+
+-- CREATING VIEW TO STORE DATA FOR LATER VISUALIZATIONS 
+
+Create View big-query-421913.COVID.PercentPopulationVaccinated as
+SELECT dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations, 
+SUM(vac.new_vaccinations) OVER (Partition by dea.location ORDER BY dea.location, dea.Date) as Rolling_People_Vaccinated
+FROM big-query-421913.COVID.covid_deaths dea 
+JOIN big-query-421913.COVID.covid_vaccines vac
+  ON dea.location = vac.location 
+  and dea.date = vac.date
+WHERE dea.continent is not null
+-- ORDER BY 2,3
